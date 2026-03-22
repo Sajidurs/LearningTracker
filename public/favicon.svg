@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#059669;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+      <feOffset dx="1" dy="1" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3" />
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Rounded Square Container -->
+  <rect width="90" height="90" x="5" y="5" rx="22" fill="#ffffff" filter="url(#shadow)"/>
+  
+  <!-- Growth Path: An upward-trending line that terminates in a leaf -->
+  <path d="M25 70 L45 50 L60 60 L78 35" fill="none" stroke="url(#g1)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- The Leaf: Symbolizing the "Grow" part -->
+  <path d="M78 35 C88 25 85 10 70 15 C65 25 78 35 78 35 Z" fill="url(#g1)" />
+  
+  <!-- Small accent flourish -->
+  <circle cx="25" cy="70" r="5" fill="#059669" />
+</svg>
