@@ -100,7 +100,7 @@ serve(async (req) => {
         "Authorization": `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: "Track & Grow <notifications@track-grow.com>",
+        from: "Track & Grow <onboarding@resend.dev>",
         to: [to],
         subject: subject,
         html: html,
@@ -109,6 +109,7 @@ serve(async (req) => {
 
     if (!res.ok) {
       const errorText = await res.text();
+      console.error("Resend API Error:", errorText);
       throw new Error(`Resend API error: ${errorText}`);
     }
 
