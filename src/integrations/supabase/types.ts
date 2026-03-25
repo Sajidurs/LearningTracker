@@ -578,6 +578,19 @@ export type Database = {
         }
         Returns: boolean
       }
+      get_leaderboard: {
+        Args: {
+          timeframe: string
+          metric: string
+        }
+        Returns: {
+          user_id: string
+          full_name: string | null
+          avatar_url: string | null
+          score: number
+          rank: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"

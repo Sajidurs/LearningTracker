@@ -22,6 +22,7 @@ import CreateJourneyPage from "./pages/dashboard/CreateJourneyPage";
 import CalendarPage from "./pages/dashboard/CalendarPage";
 import TopicDetailPage from "./pages/dashboard/TopicDetailPage";
 import SupportPage from "./pages/dashboard/SupportPage";
+import NotesPage from "./pages/dashboard/NotesPage";
 import AdminLoginPage from "./pages/admin/AdminLoginPage";
 import AdminLayout from "./pages/admin/AdminLayout";
 import PaymentSuccessPage from "./pages/dashboard/PaymentSuccessPage";
@@ -32,6 +33,9 @@ import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import AdminFeedbackPage from "./pages/admin/AdminFeedbackPage";
 import AdminPlansPage from "./pages/admin/AdminPlansPage";
 import AdminSupportPage from "./pages/admin/AdminSupportPage";
+import LeaderboardPage from "./pages/dashboard/LeaderboardPage";
+import PublicSharePage from "./pages/public/PublicSharePage";
+import Navbar from "./components/landing/Navbar";
 
 const queryClient = new QueryClient();
 
@@ -47,16 +51,27 @@ const App = () => (
             <Route path="/about" element={<AboutPage />} />
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/contact" element={<ContactPage />} />
+            <Route path="/leaderboard" element={
+              <div className="min-h-screen bg-black text-white">
+                <Navbar />
+                <div className="pt-28 pb-20 px-4 md:px-8 max-w-7xl mx-auto dark">
+                  <LeaderboardPage />
+                </div>
+              </div>
+            } />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/share/:userId" element={<PublicSharePage />} />
             <Route path="/app" element={<DashboardLayout />}>
               <Route index element={<PerformancePage />} />
               <Route path="learning" element={<LearningPage />} />
               <Route path="learning/create" element={<CreateJourneyPage />} />
               <Route path="learning/:slug" element={<LearningDetailPage />} />
               <Route path="learning/:slug/topic/:topicId" element={<TopicDetailPage />} />
+              <Route path="leaderboard" element={<LeaderboardPage />} />
               <Route path="calendar" element={<CalendarPage />} />
               <Route path="rewards" element={<RewardsPage />} />
+              <Route path="notes" element={<NotesPage />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="payment-success" element={<PaymentSuccessPage />} />
               <Route path="support" element={<SupportPage />} />

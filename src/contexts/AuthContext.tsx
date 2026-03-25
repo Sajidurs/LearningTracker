@@ -1,15 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
-
-interface Profile {
-  id: string;
-  user_id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  total_points: number;
-  plan: "free" | "paid";
-}
+import { authApi } from "@/api/auth.api";
+import { profileApi } from "@/api/profile.api";
+import { billingApi } from "@/api/billing.api";
+import { Profile } from "@/types/models";
 
 interface AuthContextType {
   user: User | null;
@@ -32,24 +26,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-    if (data) setProfile(data as unknown as Profile);
+  const fetchProfileData = async (userId: string) => {
+    try {
+      const data = await profileApi.getProfile(userId);
+      setProfile(data);
+    } catch (e) {
+      console.error("Error fetching profile:", e);
+    }
   };
 
   const refreshProfile = async () => {
     if (user) {
-      await fetchProfile(user.id);
-      // Also sync subscription status
+      await fetchProfileData(user.id);
       try {
-        await supabase.functions.invoke("check-subscription");
-        // Re-fetch profile after subscription sync
-        await fetchProfile(user.id);
-      } catch (_) { /* ignore errors */ }
+        await billingApi.checkSubscription();
+        await fetchProfileData(user.id);
+      } catch (_) {}
     }
   };
 
@@ -57,26 +49,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let isMounted = true;
     let initialSessionHandled = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = authApi.onAuthStateChange(
       async (_event, session) => {
         if (!isMounted) return;
-        // Skip if this is the initial session (handled by getSession below)
         if (!initialSessionHandled) return;
         
         setSession(session);
         setUser(session?.user ?? null);
+        
         if (session?.user) {
           setTimeout(() => {
             if (!isMounted) return;
-            fetchProfile(session.user.id);
+            fetchProfileData(session.user.id);
           }, 0);
-          // Sync subscription status from Stripe (debounced)
+          
           setTimeout(async () => {
             if (!isMounted) return;
             try {
-              await supabase.functions.invoke("check-subscription");
-              if (isMounted) await fetchProfile(session.user.id);
-            } catch (_) { /* ignore */ }
+              await billingApi.checkSubscription();
+              if (isMounted) await fetchProfileData(session.user.id);
+            } catch (_) {}
           }, 1000);
         } else {
           setProfile(null);
@@ -85,19 +77,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     );
 
-    // Handle initial session only once
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    authApi.getSession().then(async ({ data: { session } }) => {
       if (!isMounted) return;
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        await fetchProfile(session.user.id);
-        // Sync subscription after profile is loaded
+        await fetchProfileData(session.user.id);
         if (isMounted) {
           try {
-            await supabase.functions.invoke("check-subscription");
-            if (isMounted) await fetchProfile(session.user.id);
-          } catch (_) { /* ignore */ }
+            await billingApi.checkSubscription();
+            if (isMounted) await fetchProfileData(session.user.id);
+          } catch (_) {}
         }
       }
       if (isMounted) {
@@ -113,21 +103,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } },
-    });
+    const { error } = await authApi.signUp(email, password, fullName);
     return { error };
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await authApi.signIn(email, password);
     return { error };
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await authApi.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -135,17 +121,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const updatePlan = async (plan: "free" | "paid") => {
     if (!user) return;
-    await supabase.from("profiles").update({ plan } as any).eq("user_id", user.id);
+    await profileApi.updateProfile(user.id, { plan });
     await refreshProfile();
   };
 
   const signInWithGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/app`,
-      },
-    });
+    await authApi.signInWithGoogle();
   };
 
   return (

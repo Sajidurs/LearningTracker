@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.deactivate-account]
 verify_jwt = false
+
+[functions.send-email]
+verify_jwt = false

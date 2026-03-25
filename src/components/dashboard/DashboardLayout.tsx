@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, ListChecks, BarChart3, Gift, LogOut,
   Search, Bell, ChevronRight, Settings, Clock, CreditCard, Zap, ArrowUp, Menu, X, Calendar,
-  FileText, User, Award, HelpCircle, Plus, Home,
+  FileText, User, Award, HelpCircle, Plus, Home, Trophy,
 } from "lucide-react";
 import CreateJourneyWizard from "@/components/dashboard/CreateJourneyWizard";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,10 @@ import { toast } from "@/hooks/use-toast";
 const mainMenu = [
   { to: "/app", icon: LayoutDashboard, label: "Dashboard", end: true },
   { to: "/app/learning", icon: BookOpen, label: "Learning Journeys", end: false },
+  { to: "/app/notes", icon: FileText, label: "Notes", end: false },
   { to: "/app/calendar", icon: Calendar, label: "Calendar", end: false },
   { to: "/app/rewards", icon: Gift, label: "Rewards", end: false },
+  { to: "/app/leaderboard", icon: Trophy, label: "Leaderboard", end: false },
 ];
 
 const accountMenu = [
@@ -32,10 +34,12 @@ const accountMenu = [
 const SEARCHABLE_PAGES = [
   { path: "/app", label: "Dashboard", icon: LayoutDashboard, keywords: ["dashboard", "home", "overview", "performance", "analytics"] },
   { path: "/app/learning", label: "Learning Journeys", icon: BookOpen, keywords: ["learning", "journey", "course", "study"] },
+  { path: "/app/notes", label: "Notes", icon: FileText, keywords: ["notes", "write", "draft", "document"] },
   { path: "/app/calendar", label: "Calendar", icon: Calendar, keywords: ["calendar", "schedule", "date", "plan"] },
   { path: "/app/rewards", label: "Rewards", icon: Award, keywords: ["rewards", "points", "redeem", "gift"] },
   { path: "/app/profile", label: "My Profile", icon: User, keywords: ["profile", "settings", "account", "avatar", "billing"] },
   { path: "/app/support", label: "Support & Help", icon: HelpCircle, keywords: ["support", "help", "faq", "guide", "contact"] },
+  { path: "/app/leaderboard", label: "Leaderboard", icon: Trophy, keywords: ["leaderboard", "rank", "top", "score"] },
 ];
 
 const DashboardLayout = () => {
@@ -404,7 +408,7 @@ const DashboardLayout = () => {
 
             {[
               { to: "/app/calendar", icon: Calendar, label: "Calendar", end: false },
-              { to: "/app/profile", icon: User, label: "Profile", end: false },
+              { to: "/app/notes", icon: FileText, label: "Notes", end: false },
             ].map((item) => {
               const isActive = location.pathname.startsWith(item.to);
               return (

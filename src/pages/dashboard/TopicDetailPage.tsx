@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Youtube, Plus, Upload, Loader2, X, Trash2, ExternalLink, Link2, Save, CheckCircle2, Play, Pause, FileText, ChevronLeft, ChevronRight, Timer, Trophy, Clock } from "lucide-react";
+import { ArrowLeft, Youtube, Plus, Upload, Loader2, X, Trash2, ExternalLink, Link2, Save, CheckCircle2, Play, Pause, FileText, ChevronLeft, ChevronRight, Timer, Trophy, Clock, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState, useRef } from "react";
 import { toast } from "@/hooks/use-toast";
+import { DeepWorkSessionModal } from "./components/DeepWorkSessionModal";
 
 interface TopicData {
   id: string;
@@ -110,6 +111,8 @@ const TopicDetailPage = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const timerStartRef = useRef<Date | null>(null);
 
+  const [isDeepWorkOpen, setIsDeepWorkOpen] = useState(false);
+
   const fetchData = async () => {
     if (!user || !topicId) return;
     const [topicRes, subsRes, docsRes, linksRes, historyRes] = await Promise.all([
@@ -173,6 +176,28 @@ const TopicDetailPage = () => {
     setTimerSeconds(0);
     toast({ title: "Time saved!", description: `${formatTime(timerSeconds)} recorded.` });
     fetchData();
+  };
+
+  const handleDeepWorkClose = async (elapsedSeconds: number) => {
+    setIsDeepWorkOpen(false);
+    if (elapsedSeconds > 0 && user && topicId && topic) {
+      await supabase.from("time_entries").insert({
+        topic_id: topicId,
+        user_id: user.id,
+        started_at: new Date(Date.now() - elapsedSeconds * 1000).toISOString(),
+        ended_at: new Date().toISOString(),
+        duration_seconds: elapsedSeconds,
+      } as any);
+      toast({ title: "Deep Work Saved!", description: `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s added.` });
+      fetchData();
+      
+      // Check auto-completion on Deep Work session end
+      if (!topic.is_completed) {
+         toast({ title: "Great work!", description: "Would you like to mark this topic as complete?", action: (
+           <Button variant="default" size="sm" onClick={handleComplete}>Mark Complete</Button>
+         )});
+      }
+    }
   };
 
   const handleSave = async () => {
@@ -419,14 +444,23 @@ const TopicDetailPage = () => {
             <p className="text-3xl sm:text-4xl font-bold font-mono text-foreground text-center py-2">{formatTime(timerSeconds)}</p>
             <div className="flex items-center gap-2">
               {!timerRunning ? (
-                <Button size="sm" onClick={startTimer} className="gap-1.5 rounded-xl flex-1"><Play className="w-3.5 h-3.5" /> Start</Button>
+                <Button size="sm" onClick={startTimer} className="gap-1.5 rounded-xl flex-1"><Play className="w-3.5 h-3.5" /> Quick Start</Button>
               ) : (
                 <Button size="sm" variant="outline" onClick={pauseTimer} className="gap-1.5 rounded-xl flex-1"><Pause className="w-3.5 h-3.5" /> Pause</Button>
               )}
               {timerSeconds > 0 && (
-                <Button size="sm" variant="secondary" onClick={stopAndSaveTimer} className="rounded-xl flex-1">Save Time</Button>
+                <Button size="sm" variant="secondary" onClick={stopAndSaveTimer} className="rounded-xl flex-1">Save Timer</Button>
               )}
             </div>
+            
+            <Button 
+              variant="default" 
+              className="w-full rounded-xl gap-2 font-medium bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary border border-primary/20 shadow-none mt-2"
+              onClick={() => setIsDeepWorkOpen(true)}
+            >
+              <Maximize className="w-4 h-4" /> Enter Deep Work
+            </Button>
+            
             {totalTimeSpent > 0 && (
               <div className="pt-2 border-t border-border">
                 <p className="text-xs text-muted-foreground mb-1">Total time on this topic</p>
@@ -588,6 +622,13 @@ const TopicDetailPage = () => {
             </div>
           </motion.div>
         </div>
+      )}
+
+      {isDeepWorkOpen && topic && (
+        <DeepWorkSessionModal 
+          topicTitle={topic.title} 
+          onClose={handleDeepWorkClose} 
+        />
       )}
     </div>
   );

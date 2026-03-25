@@ -93,6 +93,9 @@ serve(async (req) => {
         throw new Error("Invalid email type");
     }
 
+    const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "onboarding@resend.dev";
+    const fromName = Deno.env.get("RESEND_FROM_NAME") || "Track & Grow";
+
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -100,20 +103,22 @@ serve(async (req) => {
         "Authorization": `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: "Track & Grow <onboarding@resend.dev>",
+        from: `${fromName} <${fromEmail}>`,
         to: [to],
         subject: subject,
         html: html,
       }),
     });
 
+    const responseData = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const errorText = await res.text();
-      console.error("Resend API Error:", errorText);
-      throw new Error(`Resend API error: ${errorText}`);
+      console.error("Resend API Error:", responseData);
+      throw new Error(`Resend API failed: ${JSON.stringify(responseData)}. Check if your RESEND_API_KEY is correct and if the sender/recipient email is allowed in your current Resend plan tier.`);
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    console.log("Email sent successfully:", responseData);
+    return new Response(JSON.stringify({ success: true, id: responseData.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });

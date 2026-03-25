@@ -25,6 +25,7 @@ const Navbar = () => {
 
         <div className="hidden md:flex items-center gap-8">
           <Link to="/about" className="text-sm text-[#a1a1aa] hover:text-white transition-colors duration-200">About</Link>
+          <Link to="/leaderboard" className="text-sm text-[#a1a1aa] hover:text-white transition-colors duration-200">Leaderboard</Link>
           <Link to="/pricing" className="text-sm text-[#a1a1aa] hover:text-white transition-colors duration-200">Pricing</Link>
           <Link to="/contact" className="text-sm text-[#a1a1aa] hover:text-white transition-colors duration-200">Contact</Link>
         </div>
@@ -46,6 +47,7 @@ const Navbar = () => {
       {mobileOpen && (
         <div className="md:hidden bg-black/95 backdrop-blur-xl border-b border-white/[0.06] px-4 pb-4 space-y-1">
           <Link to="/about" className="block text-sm text-[#a1a1aa] py-2.5 hover:text-white" onClick={() => setMobileOpen(false)}>About</Link>
+          <Link to="/leaderboard" className="block text-sm text-[#a1a1aa] py-2.5 hover:text-white" onClick={() => setMobileOpen(false)}>Leaderboard</Link>
           <Link to="/pricing" className="block text-sm text-[#a1a1aa] py-2.5 hover:text-white" onClick={() => setMobileOpen(false)}>Pricing</Link>
           <Link to="/contact" className="block text-sm text-[#a1a1aa] py-2.5 hover:text-white" onClick={() => setMobileOpen(false)}>Contact</Link>
           <div className="flex gap-3 pt-3">

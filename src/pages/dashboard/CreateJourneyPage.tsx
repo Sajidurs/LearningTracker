@@ -3,12 +3,13 @@ import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Plus, X, Sparkles, Loader2, ArrowLeft, ArrowRight, GripVertical, BookOpen, Clock, CheckCircle2, FileText, CalendarIcon, Rocket, HelpCircle, Gauge } from "lucide-react";
+import { Plus, X, Sparkles, Loader2, ArrowLeft, ArrowRight, GripVertical, BookOpen, CheckCircle2, FileText, CalendarIcon, Rocket, HelpCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { profileApi } from "@/api/profile.api";
+import { useJourneys } from "@/hooks/useJourneys";
 import { toast } from "@/hooks/use-toast";
-import { format, addWeeks, differenceInWeeks, differenceInDays } from "date-fns";
+import { addWeeks, differenceInWeeks, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
@@ -65,12 +66,13 @@ const DroppableWeek = ({ id, children }: { id: string; children: React.ReactNode
 };
 
 const STEP_LABELS = ["Basic Info", "Content", "Schedule"];
-
 const PLAN_LIMITS: Record<string, number> = { free: 2, paid: Infinity };
 
 const CreateJourneyPage = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const { createJourney, generateAiOutline, loading: saving, error: submitError } = useJourneys(user?.id);
+  
   const [step, setStep] = useState(1);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [limitChecked, setLimitChecked] = useState(false);
@@ -84,23 +86,23 @@ const CreateJourneyPage = () => {
   const [endDate, setEndDate] = useState<Date | undefined>(addWeeks(new Date(), 6));
   const [dailyMinutes, setDailyMinutes] = useState(60);
   const [weeklyPlan, setWeeklyPlan] = useState<Record<number, string[]>>({});
-  const [saving, setSaving] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  // Check plan limit on mount
   useEffect(() => {
     if (!user || !profile) return;
     const checkLimit = async () => {
-      const { count } = await supabase
-        .from("learning_journeys")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id);
-      const plan = profile.plan || "free";
-      const limit = PLAN_LIMITS[plan] ?? 2;
-      const isOver = (count ?? 0) >= limit;
-      setOverLimit(isOver);
-      setLimitChecked(true);
-      if (isOver) setUpgradeOpen(true);
+      try {
+        const count = await profileApi.getJourneyCount(user.id);
+        const plan = profile.plan || "free";
+        const limit = PLAN_LIMITS[plan] ?? 2;
+        const isOver = count >= limit;
+        setOverLimit(isOver);
+        if (isOver) setUpgradeOpen(true);
+      } catch (e) {
+        console.error("Failed to check limits", e);
+      } finally {
+        setLimitChecked(true);
+      }
     };
     checkLimit();
   }, [user, profile]);
@@ -108,7 +110,6 @@ const CreateJourneyPage = () => {
   const startDate = new Date();
   const totalWeeks = endDate ? Math.max(1, differenceInWeeks(endDate, startDate)) : 4;
   const totalDays = endDate ? differenceInDays(endDate, startDate) : 28;
-  const totalHours = Math.round((totalDays * dailyMinutes) / 60);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -126,71 +127,14 @@ const CreateJourneyPage = () => {
 
   const generateWithAI = async () => {
     setAiLoading(true);
-    try {
-      // 1. Check for API key (prioritizing Frontend .env for reliability)
-      const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-
-      if (apiKey) {
-        // Direct Call (Bypasses Edge Function)
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "system",
-                content: "You are a professional learning curriculum designer. You generate structured learning outlines. You MUST respond with a JSON object."
-              },
-              {
-                role: "user",
-                content: `Generate a structured learning outline for: "${title}". 
-                Respond with a JSON object containing a property "topics" which is an array of 6-12 subtopic strings. 
-                Example: { "topics": ["Introduction to HTML", "CSS for Beginners", "Mastering JavaScript Basics"] }`
-              }
-            ],
-            temperature: 0.7,
-            response_format: { type: "json_object" }
-          }),
-        });
-
-        if (!response.ok) {
-          const err = await response.text();
-          throw new Error(`OpenAI Error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const content = JSON.parse(data.choices[0].message.content);
-        const outline = content.topics || content.outline || content.curriculum || [];
-        
-        if (outline.length > 0) {
-          setTopics(outline);
-          toast({ title: "Outline generated!", description: `${outline.length} topics created with OpenAI.` });
-        } else {
-          throw new Error("No topics found in AI response");
-        }
-      } else {
-        // Fallback to Edge function if Key isn't in .env
-        const { data, error } = await supabase.functions.invoke("generate-outline", { body: { topic: title } });
-        if (error) throw error;
-        if (data?.outline) {
-          setTopics(data.outline);
-          toast({ title: "Outline generated!", description: `${data.outline.length} topics created by AI.` });
-        }
-      }
-    } catch (e: any) {
-      console.error("AI Generation Error:", e);
-      toast({ 
-        title: "AI Generation Error", 
-        description: e.message === "OpenAI Error: 401" ? "Invalid API Key. Please check your .env" : e.message || "Failed to generate outline", 
-        variant: "destructive" 
-      });
-    } finally {
-      setAiLoading(false);
+    const outline = await generateAiOutline(title, import.meta.env.VITE_OPENAI_API_KEY);
+    if (outline && outline.length > 0) {
+      setTopics(outline);
+      toast({ title: "Outline generated!", description: `${outline.length} topics created with OpenAI.` });
+    } else {
+      toast({ title: "Generation failed", description: "No topics could be generated.", variant: "destructive" });
     }
+    setAiLoading(false);
   };
 
   const autoDistribute = () => {
@@ -211,8 +155,7 @@ const CreateJourneyPage = () => {
     return "unassigned";
   };
 
-  const getUnassignedTopics = () =>
-    topics.filter((t) => !Object.values(weeklyPlan).flat().includes(t));
+  const getUnassignedTopics = () => topics.filter((t) => !Object.values(weeklyPlan).flat().includes(t));
 
   const handleDragStart = (event: DragStartEvent) => setActiveId(event.active.id as string);
 
@@ -269,69 +212,12 @@ const CreateJourneyPage = () => {
 
   const handleSave = async () => {
     if (!user) return;
-    setSaving(true);
-    try {
-      const { data: journey, error: jErr } = await supabase
-        .from("learning_journeys")
-        .insert({
-          user_id: user.id,
-          title,
-          description,
-          start_date: startDate.toISOString().split("T")[0],
-          end_date: endDate?.toISOString().split("T")[0],
-        } as any)
-        .select()
-        .single();
-
-      if (jErr) throw jErr;
-
-      const topicInserts = topics.map((t, i) => {
-        let weekNum: number | null = null;
-        for (const [week, items] of Object.entries(weeklyPlan)) {
-          if (items.includes(t)) { weekNum = parseInt(week); break; }
-        }
-        return {
-          journey_id: (journey as any).id,
-          user_id: user.id,
-          title: t,
-          week_number: weekNum,
-          sort_order: i,
-          points_value: 10,
-        };
-      });
-
-      if (topicInserts.length > 0) {
-        const { error: tErr } = await supabase.from("topics").insert(topicInserts as any);
-        if (tErr) throw tErr;
-      }
-
-      await supabase.from("notifications").insert({
-        user_id: user.id,
-        title: "Journey Created",
-        message: `Your learning journey "${title}" with ${topics.length} topics has been created!`,
-        type: "success",
-      } as any);
-
+    const journey = await createJourney(title, description, startDate, endDate, topics, weeklyPlan);
+    if (journey) {
       toast({ title: "Journey created!", description: "Your learning path is ready." });
-      
-      // Trigger Journey Created Email
-      try {
-        await supabase.functions.invoke("send-email", {
-          body: { 
-            to: user?.email, 
-            type: "journey_created",
-            data: { title, topics }
-          }
-        });
-      } catch (e) {
-        console.error("Failed to send journey created email:", e);
-      }
-
       navigate("/app/learning");
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    } finally {
-      setSaving(false);
+    } else if (submitError) {
+      toast({ title: "Error", description: submitError, variant: "destructive" });
     }
   };
 
@@ -340,16 +226,6 @@ const CreateJourneyPage = () => {
     if (step === 2) return topics.length > 0;
     return true;
   };
-
-  const getPaceIntensity = () => {
-    if (dailyMinutes <= 30) return { label: "Light", dots: 1 };
-    if (dailyMinutes <= 60) return { label: "Moderate", dots: 2 };
-    if (dailyMinutes <= 120) return { label: "Intense", dots: 3 };
-    return { label: "Extreme", dots: 4 };
-  };
-
-  const pace = getPaceIntensity();
-  const unassignedTopics = getUnassignedTopics();
 
   const formatDuration = (mins: number) => {
     if (mins < 60) return `${mins} Mins`;
@@ -431,16 +307,14 @@ const CreateJourneyPage = () => {
         })}
       </div>
 
-      {/* Mobile Journey Summary (collapsed at top) */}
+      {/* Mobile Journey Summary */}
       <div className="lg:hidden mb-4">
         <div className="bg-card rounded-xl border border-border shadow-card px-4 py-3 flex items-center gap-3 overflow-x-auto">
           <div className="flex items-center gap-2 shrink-0">
             <BookOpen className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold text-foreground truncate max-w-[120px]">{title || "New Journey"}</span>
           </div>
-          {topics.length > 0 && (
-            <Badge variant="outline" className="shrink-0 text-[10px]">{topics.length} topics</Badge>
-          )}
+          {topics.length > 0 && <Badge variant="outline" className="shrink-0 text-[10px]">{topics.length} topics</Badge>}
           {step >= 3 && (
             <>
               <Badge variant="outline" className="shrink-0 text-[10px]">{totalDays}d</Badge>
@@ -450,7 +324,6 @@ const CreateJourneyPage = () => {
         </div>
       </div>
 
-      {/* Main content: two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column - main form */}
         <div className="lg:col-span-2">
@@ -512,10 +385,7 @@ const CreateJourneyPage = () => {
                         <motion.button
                           whileHover={{ scale: 1.02, y: -4 }}
                           whileTap={{ scale: 0.98 }}
-                          onClick={() => {
-                            setOutlineMode("ai");
-                            generateWithAI();
-                          }}
+                          onClick={() => { setOutlineMode("ai"); generateWithAI(); }}
                           className="relative p-6 rounded-2xl border-2 border-primary/20 bg-primary/5 text-left transition-all hover:border-primary/50 hover:shadow-lg group overflow-hidden"
                         >
                           <div className="absolute -right-4 -top-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-colors" />
@@ -624,7 +494,6 @@ const CreateJourneyPage = () => {
                     <p className="text-sm text-muted-foreground">Pick a target date and set your daily study time.</p>
                   </div>
 
-                  {/* Target Completion Date */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 block">Target Completion Date</label>
                     <div className="border border-border rounded-2xl p-4 bg-background inline-block">
@@ -638,30 +507,17 @@ const CreateJourneyPage = () => {
                     </div>
                   </div>
 
-                  {/* Daily Study Duration Slider */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Daily Study Duration</label>
                       <span className="text-sm font-bold text-primary">{formatDuration(dailyMinutes)}</span>
                     </div>
-                    <Slider
-                      value={[dailyMinutes]}
-                      onValueChange={(v) => setDailyMinutes(v[0])}
-                      min={15}
-                      max={240}
-                      step={15}
-                      className="w-full"
-                    />
+                    <Slider value={[dailyMinutes]} onValueChange={(v) => setDailyMinutes(v[0])} min={15} max={240} step={15} className="w-full" />
                     <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                      <span>15m</span>
-                      <span>1h</span>
-                      <span>2h</span>
-                      <span>3h</span>
-                      <span>4h</span>
+                      <span>15m</span><span>1h</span><span>2h</span><span>3h</span><span>4h</span>
                     </div>
                   </div>
 
-                  {/* Weekly Schedule DnD */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Weekly Topic Schedule</label>
@@ -669,13 +525,7 @@ const CreateJourneyPage = () => {
                         <Sparkles className="w-3.5 h-3.5" /> Auto-distribute
                       </Button>
                     </div>
-                    <DndContext
-                      sensors={sensors}
-                      collisionDetection={rectIntersection}
-                      onDragStart={handleDragStart}
-                      onDragOver={handleDragOver}
-                      onDragEnd={handleDragEnd}
-                    >
+                    <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
                       <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                         {Array.from({ length: totalWeeks }, (_, i) => i + 1).map((week) => {
                           const weekItems = weeklyPlan[week] || [];
@@ -687,11 +537,7 @@ const CreateJourneyPage = () => {
                               </div>
                               <DroppableWeek id={`week-${week}`}>
                                 <SortableContext items={weekItems} strategy={verticalListSortingStrategy}>
-                                  {weekItems.length > 0 ? weekItems.map((t, idx) => (
-                                    <SortableTopicItem key={t} id={t} title={t} index={idx} />
-                                  )) : (
-                                    <p className="text-xs text-muted-foreground italic py-2 text-center">Drop topics here</p>
-                                  )}
+                                  {weekItems.length > 0 ? weekItems.map((t, idx) => <SortableTopicItem key={t} id={t} title={t} index={idx} />) : <p className="text-xs text-muted-foreground italic py-2 text-center">Drop topics here</p>}
                                 </SortableContext>
                               </DroppableWeek>
                             </div>
@@ -699,14 +545,12 @@ const CreateJourneyPage = () => {
                         })}
                       </div>
 
-                      {unassignedTopics.length > 0 && (
+                      {getUnassignedTopics().length > 0 && (
                         <div className="p-3 rounded-xl bg-muted/40 border border-dashed border-border mt-3">
                           <p className="text-xs font-medium text-muted-foreground mb-2">Unassigned — Drag to a week above</p>
                           <DroppableWeek id="unassigned">
-                            <SortableContext items={unassignedTopics} strategy={verticalListSortingStrategy}>
-                              {unassignedTopics.map((t, idx) => (
-                                <SortableTopicItem key={t} id={t} title={t} index={idx} />
-                              ))}
+                            <SortableContext items={getUnassignedTopics()} strategy={verticalListSortingStrategy}>
+                              {getUnassignedTopics().map((t, idx) => <SortableTopicItem key={t} id={t} title={t} index={idx} />)}
                             </SortableContext>
                           </DroppableWeek>
                         </div>
@@ -723,7 +567,6 @@ const CreateJourneyPage = () => {
                     </DndContext>
                   </div>
 
-                  {/* Flexible schedule note */}
                   <div className="flex items-start gap-3 p-4 rounded-xl bg-muted/50 border border-border">
                     <HelpCircle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
                     <p className="text-sm text-muted-foreground">Need a more flexible schedule? You can pause your journey anytime later.</p>
@@ -732,42 +575,24 @@ const CreateJourneyPage = () => {
               )}
             </AnimatePresence>
 
-            {/* Navigation footer */}
             <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (step === 1) navigate("/app/learning");
-                  else if (step === 2 && outlineMode) setOutlineMode(null);
-                  else setStep(step - 1);
-                }}
-                className="gap-1.5 rounded-xl"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                {step === 1 ? "Back to Learning" : step === 2 && !outlineMode ? "Back to Basic Info" : `Back to ${STEP_LABELS[step - 2]}`}
+              <Button variant="outline" onClick={() => { if (step === 1) navigate("/app/learning"); else if (step === 2 && outlineMode) setOutlineMode(null); else setStep(step - 1); }} className="gap-1.5 rounded-xl">
+                <ArrowLeft className="w-4 h-4" /> {step === 1 ? "Back to Learning" : step === 2 && !outlineMode ? "Back to Basic Info" : `Back to ${STEP_LABELS[step - 2]}`}
               </Button>
               {step < 3 ? (
-                <Button
-                  onClick={() => {
-                    if (step === 2) autoDistribute();
-                    setStep(step + 1);
-                  }}
-                  disabled={!canProceed()}
-                  className="gap-1.5 rounded-xl px-6"
-                >
+                <Button onClick={() => { if (step === 2) autoDistribute(); setStep(step + 1); }} disabled={!canProceed()} className="gap-1.5 rounded-xl px-6">
                   Next <ArrowRight className="w-4 h-4" />
                 </Button>
               ) : (
                 <Button onClick={handleSave} disabled={saving} className="gap-2 rounded-xl px-8 bg-primary hover:bg-primary/90">
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
-                  Create Journey
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />} Create Journey
                 </Button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Right column - Journey Overview (hidden on mobile, shown at top instead) */}
+        {/* Right column - Journey Overview */}
         <div className="hidden lg:block lg:col-span-1">
           <div className="bg-card rounded-2xl border border-border shadow-card p-6 sticky top-6 space-y-5">
             <div className="flex items-center gap-3">
@@ -778,7 +603,6 @@ const CreateJourneyPage = () => {
             </div>
 
             <div className="space-y-3">
-              {/* Selected Path - always show */}
               <div className="flex items-start gap-3 p-3.5 rounded-xl bg-muted/50">
                 <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                   <FileText className="w-4 h-4 text-primary" />
@@ -786,87 +610,44 @@ const CreateJourneyPage = () => {
                 <div>
                   <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Selected Path</p>
                   <p className="text-base font-bold text-foreground truncate max-w-[180px]">{title || "—"}</p>
-                  {topics.length > 0 && (
-                    <p className="text-xs text-muted-foreground">{topics.length} topics</p>
-                  )}
+                  {topics.length > 0 && <p className="text-xs text-muted-foreground">{topics.length} topics</p>}
                 </div>
               </div>
 
-              {/* Topics count - only show after topics added */}
               {topics.length > 0 && (
                 <div className="flex items-start gap-3 p-3.5 rounded-xl bg-muted/50">
                   <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <BookOpen className="w-4 h-4 text-primary" />
                   </div>
                   <div>
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Content</p>
-                    <p className="text-base font-bold text-foreground">{topics.length} Topics</p>
-                    <p className="text-xs text-muted-foreground">Ready to schedule</p>
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Content Ready</p>
+                    <p className="text-sm font-semibold text-foreground">{topics.length} topics defined</p>
+                    <div className="flex gap-1 flex-wrap mt-1">
+                      {topics.slice(0, 3).map(t => (
+                        <span key={t} className="text-[10px] bg-background border border-border px-1.5 py-0.5 rounded text-muted-foreground truncate max-w-[120px]">{t}</span>
+                      ))}
+                      {topics.length > 3 && <span className="text-[10px] text-muted-foreground">+{topics.length - 3} more</span>}
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Timeline - only show on step 3 */}
               {step >= 3 && (
                 <div className="flex items-start gap-3 p-3.5 rounded-xl bg-muted/50">
                   <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <CalendarIcon className="w-4 h-4 text-primary" />
                   </div>
                   <div>
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Timeline</p>
-                    <p className="text-base font-bold text-foreground">{totalDays} Days</p>
-                    <p className="text-xs text-muted-foreground">
-                      Ends {endDate ? format(endDate, "MMM d, yyyy") : "—"}
-                    </p>
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Time Commitment</p>
+                    <p className="text-sm font-semibold text-foreground">{totalDays} days total</p>
+                    <p className="text-xs text-muted-foreground">{dailyMinutes} minutes daily</p>
                   </div>
-                </div>
-              )}
-
-              {/* Total Commitment - only show on step 3 */}
-              {step >= 3 && (
-                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-muted/50">
-                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Clock className="w-4 h-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Total Commitment</p>
-                    <p className="text-base font-bold text-foreground">{totalHours} Hours</p>
-                    <p className="text-xs text-muted-foreground">{dailyMinutes} mins / day</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Pace Intensity - only show on step 3 */}
-              {step >= 3 && (
-                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-muted/50">
-                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Gauge className="w-4 h-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Pace Intensity</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4].map((d) => (
-                          <div key={d} className={cn("w-2.5 h-2.5 rounded-full", d <= pace.dots ? "bg-primary" : "bg-border")} />
-                        ))}
-                      </div>
-                      <span className="text-sm font-semibold text-foreground">{pace.label}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Empty state hint for step 1 */}
-              {step === 1 && !title && (
-                <div className="p-3.5 rounded-xl bg-muted/30 border border-dashed border-border text-center">
-                  <p className="text-xs text-muted-foreground">Enter a title to start building your journey overview.</p>
                 </div>
               )}
             </div>
           </div>
         </div>
       </div>
-      <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} />
     </div>
   );
 };

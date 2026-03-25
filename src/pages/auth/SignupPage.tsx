@@ -4,22 +4,11 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, Mail, Lock, User, Loader2, Check, ChevronDown, CreditCard, CalendarDays, Shield, Sparkles } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-// import { lovable } from "@/integrations/lovable/index";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-
-interface Plan {
-  id: string;
-  name: string;
-  slug: string;
-  price: number;
-  interval: string;
-  features: string[];
-  stripe_price_id: string | null;
-  max_journeys: number;
-  max_topics: number;
-}
+import { billingApi } from "@/api/billing.api";
+import { journeysApi } from "@/api/journeys.api";
+import { Plan } from "@/types/models";
 
 const SignupPage = () => {
   const [name, setName] = useState("");
@@ -43,16 +32,11 @@ const SignupPage = () => {
 
   useEffect(() => {
     const fetchPlans = async () => {
-      const { data } = await supabase
-        .from("plans")
-        .select("id, name, slug, price, interval, features, stripe_price_id, max_journeys, max_topics")
-        .eq("is_active", true)
-        .order("sort_order");
-      if (data) {
-        setPlans(data.map(p => ({
-          ...p,
-          features: Array.isArray(p.features) ? (p.features as string[]) : [],
-        })));
+      try {
+        const data = await billingApi.getPlans();
+        setPlans(data as unknown as Plan[]);
+      } catch (e) {
+        console.error("Failed to fetch plans", e);
       }
     };
     fetchPlans();
@@ -82,24 +66,21 @@ const SignupPage = () => {
       return;
     }
 
-    // If user selected a paid plan, store price ID and redirect to dashboard
-    // The dashboard startup hook will trigger checkout once session is ready
     if (isPaid && selectedPlan?.stripe_price_id) {
       sessionStorage.setItem("pending_checkout_price_id", selectedPlan.stripe_price_id);
     }
 
     toast({ title: "Account created!", description: "Welcome to Track and Grow" });
     
-    // Trigger Welcome Email
     try {
-      await supabase.functions.invoke("send-email", {
-        body: { 
-          to: email, 
-          type: "welcome" 
-        }
-      });
+      await journeysApi.triggerEmail(email, "welcome");
     } catch (e) {
       console.error("Failed to send welcome email:", e);
+      toast({
+        title: "Welcome email failed",
+        description: "Your account is created, but we couldn't send the welcome email.",
+        variant: "destructive"
+      });
     }
 
     navigate("/app");
@@ -152,7 +133,7 @@ const SignupPage = () => {
               </div>
               <span className="text-sm font-medium text-primary-foreground">Secure & Private</span>
             </div>
-            <p className="text-xs text-primary-foreground/60">Your data is encrypted and never shared. Cancel anytime with no questions asked.</p>
+            <p className="text-xs text-primary-foreground/60">Your data is encrypted and never shared. Cancel anytime.</p>
           </div>
         </div>
 
@@ -164,7 +145,6 @@ const SignupPage = () => {
       {/* Right panel - Form */}
       <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-[480px] space-y-6">
-          {/* Mobile logo */}
           <div className="lg:hidden text-center mb-4">
             <Link to="/" className="inline-flex items-center gap-2">
               <div className="w-9 h-9 rounded-xl bg-gradient-primary flex items-center justify-center">
@@ -180,7 +160,6 @@ const SignupPage = () => {
           </div>
 
           <form onSubmit={handleSignup} className="space-y-4">
-            {/* Full Name */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">Full Name</label>
               <div className="relative">
@@ -190,7 +169,6 @@ const SignupPage = () => {
               </div>
             </div>
 
-            {/* Email */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">Email Address</label>
               <div className="relative">
@@ -200,7 +178,6 @@ const SignupPage = () => {
               </div>
             </div>
 
-            {/* Password row */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">Password</label>
@@ -220,7 +197,6 @@ const SignupPage = () => {
               </div>
             </div>
 
-            {/* Plan Selector */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">Select Plan</label>
               <div className="relative">
@@ -275,7 +251,6 @@ const SignupPage = () => {
               </div>
             </div>
 
-            {/* Order Summary - only for paid plans */}
             <AnimatePresence>
               {isPaid && selectedPlan && (
                 <motion.div
@@ -311,13 +286,11 @@ const SignupPage = () => {
                         <span className="font-bold text-primary">{formatPrice(selectedPlan.price)}</span>
                       </div>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">You'll be redirected to secure checkout after creating your account. Cancel anytime.</p>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Terms */}
             <label className="flex items-start gap-2.5 cursor-pointer">
               <input
                 type="checkbox"
@@ -330,44 +303,34 @@ const SignupPage = () => {
               </span>
             </label>
 
-            {/* Submit */}
-            <Button
-              className="w-full h-11 rounded-xl font-medium"
-              type="submit"
-              disabled={loading || !agreedToTerms}
-            >
+            <Button className="w-full h-11 rounded-xl font-medium" type="submit" disabled={loading || !agreedToTerms}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {isPaid ? `Create Account & Continue to Payment` : "Create Account"}
             </Button>
           </form>
 
-          {/* Divider */}
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-border" />
             <span className="text-xs text-muted-foreground uppercase tracking-wider">or sign up with</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          {/* Google */}
           <button
             onClick={handleGoogleSignup}
             disabled={googleLoading}
             className="w-full flex items-center justify-center gap-3 h-11 rounded-xl border border-border bg-secondary/50 hover:bg-secondary transition-colors text-sm font-medium text-foreground disabled:opacity-50"
           >
-            {googleLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
+            {googleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
               </svg>
-            )}
+            }
             Google
           </button>
 
-          {/* Footer */}
           <p className="text-center text-sm text-muted-foreground">
             Already have an account?{" "}
             <Link to="/login" className="text-foreground font-semibold hover:underline">Log in</Link>

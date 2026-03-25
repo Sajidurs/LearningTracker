@@ -9,6 +9,7 @@ import PricingSection from "@/components/landing/PricingSection";
 import TestimonialsSection from "@/components/landing/TestimonialsSection";
 import CTASection from "@/components/landing/CTASection";
 import FooterSection from "@/components/landing/FooterSection";
+import AppShowcase from "@/components/landing/AppShowcase";
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -25,6 +26,7 @@ const Index = () => {
       <Navbar />
       <HeroSection />
       <FeaturesSection />
+      <AppShowcase />
       <HowItWorksSection />
       <PricingSection />
       <TestimonialsSection />
